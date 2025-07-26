@@ -1,0 +1,9 @@
+flask
+flask-cors
+langchain
+langchain-openai
+langchain-community
+faiss-cpu
+youtube-transcript-api
+tiktoken
+python-dotenv
