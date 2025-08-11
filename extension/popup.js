@@ -78,15 +78,71 @@ function displayVideoInfo(videoData) {
     videoIdElement.textContent = videoData.videoId;
     videoInfo.style.display = 'block';
     
-    // Enable chat interface
-    questionInput.disabled = false;
-    questionInput.placeholder = 'Ask about this video...';
-    
-    showStatus('Video loaded! Ready to chat.', 'success');
+    // Check processing status
+    if (videoData.processed === true) {
+        // Video is processed and ready
+        questionInput.disabled = false;
+        questionInput.placeholder = 'Ask about this video...';
+        showStatus('Video processed! Ready to chat.', 'success');
+        
+    } else if (videoData.processed === false && videoData.processing_error) {
+        // Video processing failed
+        questionInput.disabled = true;
+        questionInput.placeholder = 'Video processing failed...';
+        showStatus(`Processing failed: ${videoData.processing_error}`, 'error');
+        
+    } else {
+        // Video is being processed or status unknown
+        questionInput.disabled = true;
+        questionInput.placeholder = 'Processing video...';
+        showStatus('Processing video transcript... Please wait.', 'loading');
+        
+        // Check status periodically
+        checkProcessingStatus();
+    }
     
     // Clear previous messages for new video
     chatHistory = [];
     updateChatDisplay();
+}
+
+// Check processing status periodically
+function checkProcessingStatus() {
+    const checkInterval = setInterval(async () => {
+        try {
+            const result = await chrome.storage.local.get('currentVideo');
+            const videoData = result.currentVideo;
+            
+            if (!videoData || videoData.videoId !== currentVideoId) {
+                clearInterval(checkInterval);
+                return;
+            }
+            
+            if (videoData.processed === true) {
+                clearInterval(checkInterval);
+                questionInput.disabled = false;
+                questionInput.placeholder = 'Ask about this video...';
+                showStatus('Video processed! Ready to chat.', 'success');
+                
+            } else if (videoData.processed === false && videoData.processing_error) {
+                clearInterval(checkInterval);
+                questionInput.disabled = true;
+                questionInput.placeholder = 'Video processing failed...';
+                showStatus(`Processing failed: ${videoData.processing_error}`, 'error');
+            }
+            
+        } catch (error) {
+            console.error('Error checking processing status:', error);
+        }
+    }, 2000); // Check every 2 seconds
+    
+    // Stop checking after 60 seconds
+    setTimeout(() => {
+        clearInterval(checkInterval);
+        if (questionInput.disabled) {
+            showStatus('Processing timeout. Please refresh and try again.', 'error');
+        }
+    }, 60000);
 }
 
 // Show status message
@@ -128,10 +184,17 @@ async function sendMessage() {
             if (response && response.success) {
                 addMessage(response.response, 'bot');
             } else {
-                addMessage('Sorry, I encountered an error: ' + (response?.error || 'Unknown error'), 'bot');
+                const errorMsg = response?.error || 'Unknown error occurred';
+                addMessage(`Sorry, I encountered an error: ${errorMsg}`, 'bot');
+                
+                // If backend is not running, show helpful message
+                if (errorMsg.includes('Failed to fetch') || errorMsg.includes('HTTP error')) {
+                    addMessage('Make sure your Flask server is running on http://localhost:5000', 'bot');
+                }
             }
             
             questionInput.disabled = false;
+            sendButton.disabled = false;
             questionInput.focus();
         });
         
@@ -139,6 +202,7 @@ async function sendMessage() {
         loadingMessage.remove();
         addMessage('Error: ' + error.message, 'bot');
         questionInput.disabled = false;
+        sendButton.disabled = false;
     }
 }
 

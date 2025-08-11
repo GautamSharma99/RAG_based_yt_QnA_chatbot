@@ -72,6 +72,8 @@ new MutationObserver(() => {
 handleUrlChange();
 
 // Listen for messages from popup
+// content.js
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === 'GET_CURRENT_VIDEO') {
         const videoId = extractVideoId();
@@ -89,29 +91,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
         }
     }
-    
+
     if (request.type === 'PROCESS_VIDEO') {
         if (isProcessing) {
             sendResponse({
                 success: false,
                 error: 'Already processing a video'
             });
-            return;
+            return true;
         }
-        
+
         isProcessing = true;
-        
-        // Simulate processing (you'll replace this with your actual API call)
-        setTimeout(() => {
+        const videoId = extractVideoId();
+
+        fetch('http://127.0.0.1:5000/process-video', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                video_id: videoId
+            }),
+        })
+        .then(response => response.json())
+        .then(data => {
             isProcessing = false;
-            sendResponse({
-                success: true,
-                message: 'Video processed successfully'
-            });
-        }, 2000);
-        
-        // Return true to indicate we'll send response asynchronously
-        return true;
+            sendResponse(data);
+        })
+        .catch(error => {
+            isProcessing = false;
+            sendResponse({ success: false, error: error.toString() });
+        });
+
+        return true; // Indicates we will send a response asynchronously
     }
 });
 

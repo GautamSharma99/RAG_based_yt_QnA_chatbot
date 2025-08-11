@@ -1,5 +1,6 @@
 // Background service worker
 let currentVideoData = null;
+const BACKEND_URL = 'http://localhost:5000'; // Your Flask server URL
 
 // Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -16,6 +17,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             chrome.storage.local.set({
                 currentVideo: currentVideoData
             });
+            
+            // Process video with backend when detected
+            processVideoWithBackend(currentVideoData);
             
             // Update extension badge
             chrome.action.setBadgeText({
@@ -52,13 +56,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-// Handle chat messages and communicate with your backend
+// Process video with backend when detected
+async function processVideoWithBackend(videoData) {
+    try {
+        const response = await fetch(`${BACKEND_URL}/process_video`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                video_url: videoData.url
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Video processed successfully:', result);
+        
+        // Update stored video data with processing status
+        const updatedVideoData = {
+            ...videoData,
+            processed: true,
+            processing_result: result
+        };
+        
+        chrome.storage.local.set({
+            currentVideo: updatedVideoData
+        });
+        
+    } catch (error) {
+        console.error('Error processing video with backend:', error);
+        
+        // Update stored video data with error status
+        const updatedVideoData = {
+            ...videoData,
+            processed: false,
+            processing_error: error.message
+        };
+        
+        chrome.storage.local.set({
+            currentVideo: updatedVideoData
+        });
+    }
+}
+
+// background.js
+
 async function handleChatMessage(request, sendResponse) {
     try {
-        // Get current video data
         const result = await chrome.storage.local.get('currentVideo');
         const videoData = result.currentVideo;
-        
+
         if (!videoData) {
             sendResponse({
                 success: false,
@@ -66,17 +117,30 @@ async function handleChatMessage(request, sendResponse) {
             });
             return;
         }
-        
-        // Here you would make an API call to your backend
-        // For now, we'll simulate the response
-        const response = await simulateBackendCall(videoData.videoId, request.message);
-        
+
+        const response = await fetch('http://127.0.0.1:5000/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                video_id: videoData.videoId,
+                question: request.message,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const responseData = await response.json();
+
         sendResponse({
             success: true,
-            response: response,
+            response: responseData.response,
             videoId: videoData.videoId
         });
-        
+
     } catch (error) {
         sendResponse({
             success: false,
@@ -85,24 +149,28 @@ async function handleChatMessage(request, sendResponse) {
     }
 }
 
-// Simulate backend API call (replace with your actual API)
-async function simulateBackendCall(videoId, question) {
-    // This is where you'd integrate with your existing Python backend
-    // You could either:
-    // 1. Create a simple Flask/FastAPI server to handle requests
-    // 2. Use a cloud function (AWS Lambda, Google Cloud Functions, etc.)
-    // 3. Use a service like Vercel or Netlify Functions
-    
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve(`This is a simulated response for video ${videoId} about: ${question}. In your implementation, this would be the actual AI response from your RAG system.`);
-        }, 1500);
-    });
+// Health check function to verify backend is running
+async function checkBackendHealth() {
+    try {
+        const response = await fetch(`${BACKEND_URL}/health`);
+        return response.ok;
+    } catch (error) {
+        console.error('Backend health check failed:', error);
+        return false;
+    }
 }
 
 // Handle extension installation
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
     console.log('YouTube Chatbot extension installed');
+    
+    // Check if backend is running
+    const isBackendHealthy = await checkBackendHealth();
+    if (!isBackendHealthy) {
+        console.warn('Backend server is not running. Please start your Flask server on http://localhost:5000');
+    } else {
+        console.log('Backend server is running and healthy');
+    }
 });
 
 // Handle tab updates to manage badge
