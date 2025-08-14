@@ -11,7 +11,12 @@ from langchain_core.output_parsers import StrOutputParser
 import re
 import logging
 import requests
+from dotenv import load_dotenv
 
+# Load environment variables
+load_dotenv()
+
+from flask_cors import CORS
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -110,6 +115,10 @@ def get_youtube_transcript(video_id):
 def create_rag_chain(transcript):
     """Create RAG chain from transcript"""
     try:
+        # Check if OpenAI API key is set
+        if not os.getenv('OPENAI_API_KEY'):
+            raise Exception("OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable.")
+        
         # Check if transcript is meaningful
         if len(transcript.strip()) < 50:
             raise Exception("Transcript is too short to create a meaningful chat experience.")
@@ -376,7 +385,6 @@ if __name__ == '__main__':
         print("📺 youtube-transcript-api version: unknown")
     
     print("🚀 Starting Flask server...")
-    print("📋 Required packages: flask flask-cors youtube-transcript-api langchain langchain-openai langchain-community faiss-cpu requests")
     print("🌐 Server will be available at: http://localhost:5000")
     
     app.run(debug=True, host='0.0.0.0', port=5000)
